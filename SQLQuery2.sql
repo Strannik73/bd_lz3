@@ -105,6 +105,33 @@ INSERT INTO process (stud_id, hours_id) VALUES
 (4, 4),
 (5, 3);
 
+INSERT INTO teach (last_name, f_name, s_name, dr_date, start_work_date) VALUES
+(N'Смирнов', N'Иван', N'Андреевич', '1980-05-15', '2005-09-01'),
+(N'Крылов', N'Олег', N'Петрович', '1975-08-20', '2000-09-01'),
+(N'Бортников', N'Дмитрий', N'Сергеевич', '1988-11-10', '2010-09-01'),
+(N'Енмильоо', N'Дмитрий', N'', '1981-11-10', '2010-09-06');
+
+INSERT INTO subj (subj, hourss) VALUES
+(N'Математика', N'2 час(а)'),
+(N'Физика', N'3 час(а)'),
+(N'Информатика', N'2 час(а)'),
+(N'История', N'2 час(а)');
+
+
+INSERT INTO work (teach_id, subj_id, hours_id) VALUES
+(1, 1, 1), 
+(1, 3, 3); 
+
+INSERT INTO work (teach_id, subj_id, hours_id) VALUES
+(2, 2, 2); 
+
+INSERT INTO work (teach_id, subj_id, hours_id) VALUES
+(3, 4, 4), 
+(3, 1, 1);
+
+INSERT INTO work (teach_id, subj_id, hours_id) VALUES
+(4, 2, 1);
+
 --======================================================================
 --1S
 SELECT 
@@ -248,10 +275,90 @@ GROUP BY f.faculty_name
 ORDER BY f.faculty_name;
 
 --10
-SELECT
+SELECT 
     f.faculty_name,
-    COUNT(t.id) AS Количество_преподавателей
-FROM faculty f, teacher t
-WHERE t.faculty_id = f.id
-GROUP BY f.faculty_name
-ORDER BY f.faculty_name;
+    COUNT(DISTINCT w.teach_id) AS Кол_воПрепод
+FROM faculty f
+JOIN [hours] h ON f.id = h.faculty_id
+JOIN [work] w ON h.id = w.hours_id
+GROUP BY f.faculty_name;
+
+--11
+WITH MaxHoursPerTeacher AS (
+    SELECT 
+        w.teach_id,
+        MAX(h.all_h) AS max_hours
+    FROM work w
+    JOIN hours h ON w.hours_id = h.id
+    GROUP BY w.teach_id
+)
+SELECT 
+    t.id AS teach_id,
+    t.last_name,
+    t.f_name,
+    s.subj,
+    h.all_h
+FROM teach t
+JOIN work w ON t.id = w.teach_id
+JOIN subj s ON w.subj_id = s.id
+JOIN hours h ON w.hours_id = h.id
+JOIN MaxHoursPerTeacher m ON t.id = m.teach_id AND h.all_h = m.max_hours
+ORDER BY t.id;
+
+--12
+SELECT 
+    t.id,
+    t.last_name,
+    t.f_name,
+    t.s_name,
+    COUNT(DISTINCT w.subj_id) AS Кол_воПредметов
+FROM teach t
+JOIN work w ON t.id = w.teach_id
+GROUP BY t.id, t.last_name, t.f_name, t.s_name
+HAVING COUNT(DISTINCT w.subj_id) > 1;
+
+--13
+SELECT 
+    h.course,
+    f.faculty_name,
+    SUM(h.all_h) AS СуммаЧасов
+FROM hours h
+JOIN faculty f ON h.faculty_id = f.id
+GROUP BY h.course, f.faculty_name
+ORDER BY h.course;
+
+--14
+SELECT 
+    f.faculty_name,
+    h.course,
+    COUNT(DISTINCT s.id) AS Кол_воПредметов
+FROM hours h
+JOIN faculty f ON h.faculty_id = f.id
+JOIN work w ON h.id = w.hours_id
+JOIN subj s ON w.subj_id = s.id
+WHERE h.course = 2
+GROUP BY f.faculty_name, h.course
+ORDER BY 
+    f.faculty_name DESC, 
+    h.course ASC;
+    
+--15
+SELECT 
+    f.faculty_name,
+    COUNT(DISTINCT s.id) AS кол_воПредметтов
+FROM 
+    faculty f
+JOIN 
+    [hours] h ON f.id = h.faculty_id
+JOIN 
+    work w ON h.id = w.hours_id
+JOIN 
+    subj s ON w.subj_id = s.id
+JOIN 
+    teach t ON w.teach_id = t.id
+WHERE 
+    t.s_name = ''
+GROUP BY 
+    f.faculty_name;
+
+    SELECT * FROM teach WHERE s_name = '';
