@@ -77,16 +77,17 @@ ALTER  TABLE work ADD CONSTRAINT FK_work_teach FOREIGN KEY (teach_id) REFERENCES
 
 --=================================заполнение==========================================     
 INSERT INTO stud (last_name, f_name, s_name, dr_date, in_date, exm) VALUES
-(N'Иванов', N'Иван', N'Иванович', '1980-01-01', '2018-09-01', 7),
+(N'Зингель', N'Иван', N'Иванович', '1980-01-01', '2018-09-01', 7),
 (N'Петров', N'Петр', N'Петрович', '2001-02-02', '2015-09-01', 8),
-(N'Сидоров', N'Сидор', N'Сидорович', '2000-03-03', '2018-09-01', 4),
+(N'Зайцева', N'Мария', N'Валильевна', '2000-03-03', '2018-09-01', 4),
 (N'Кузнецов', N'Алексей', N'Игоревич', '2002-04-04', '2014-09-01', 9),
 (N'Смирнов', N'Дмитрий', N'Олегович', '2001-05-05', '2019-09-01', 6),
 (N'Аграар', N'Джордан', N'', '2001-05-05', '2019-09-01', 9),
-(N'Крицах', N'Альберт', N'', '2001-05-05', '2019-09-01', 7);
+(N'Ботяновский', N'Альберт', N'', '2001-05-05', '2019-09-01', 7);
+
 
 INSERT INTO faculty (faculty_name) VALUES
-(N'ФИТ'),
+(N'ФПМ'),
 (N'ФПК');
 
 INSERT INTO form (form_name) VALUES
@@ -102,11 +103,12 @@ INSERT INTO [hours] (course, faculty_id, form_id, all_h, inclass_h) VALUES
 INSERT INTO process (stud_id, hours_id) VALUES
 (1, 2),
 (2, 2),
-(3, 3),
+(3, 1),
 (4, 4),
 (5, 3),
-(6, 1),
+(6, 2),
 (7, 2);
+
 
 
 INSERT INTO teach (last_name, f_name, s_name, dr_date, start_work_date) VALUES
@@ -585,3 +587,125 @@ GROUP BY
     f.faculty_name
 ORDER BY 
     f.faculty_name;
+
+-------- 3 ---------------
+--1
+WITH MaxAvgExm AS (
+    SELECT MAX(avgexm) AS maxexm
+    FROM (
+        SELECT AVG(exm) AS avgexm
+        FROM stud
+        GROUP BY id
+    ) AS AvgStud
+)
+SELECT s.last_name, s.f_name, s.s_name, s.exm
+FROM stud s
+CROSS JOIN MaxAvgExm
+WHERE s.exm < (0.8 * MaxAvgExm.maxexm);
+
+--2
+SELECT last_name, f_name, s_name, exm
+FROM stud
+WHERE exm = (
+    SELECT MAX(exm)
+    FROM stud
+)
+
+--3
+WITH Facult AS (
+    SELECT h.faculty_id, COUNT(*) AS StudCount
+    FROM process p
+    JOIN hours h ON p.hours_id = h.id
+    GROUP BY h.faculty_id
+),
+MaxFaculty AS (
+    SELECT TOP 1 faculty_id
+    FROM Facult
+    ORDER BY StudCount DESC
+)
+SELECT s.last_name
+FROM stud s
+JOIN process p ON s.id = p.stud_id
+JOIN hours h ON p.hours_id = h.id
+WHERE h.faculty_id = (SELECT faculty_id FROM MaxFaculty)
+
+--4
+SELECT s.*
+FROM stud s
+JOIN process p ON s.id = p.stud_id
+JOIN hours h ON p.hours_id = h.id
+JOIN form f ON h.form_id = f.id
+JOIN faculty fc ON h.faculty_id = fc.id
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM stud s2
+    JOIN process p2 ON s2.id = p2.stud_id
+    JOIN hours h2 ON p2.hours_id = h2.id
+    WHERE h2.form_id = h.form_id 
+      AND h2.course = h.course 
+      AND h2.faculty_id = h.faculty_id
+      AND (s2.s_name IS NULL OR s2.s_name = '')
+)
+
+--5
+SELECT s2.*
+FROM stud s2
+JOIN process p2 ON s2.id = p2.stud_id
+JOIN hours h2 ON p2.hours_id = h2.id
+WHERE h2.course = (
+    SELECT h1.course
+    FROM process p1
+    JOIN hours h1 ON p1.hours_id = h1.id
+    JOIN stud s1 ON p1.stud_id = s1.id
+    WHERE s1.last_name = N'Ботяновский'
+)
+AND s2.last_name <> N'Ботяновский';
+
+--6
+SELECT DISTINCT s3.*
+FROM stud s3
+JOIN process p3 ON s3.id = p3.stud_id
+JOIN hours h3 ON p3.hours_id = h3.id
+WHERE h3.course IN (
+    --Зингель
+    SELECT h1.course
+    FROM stud s1
+    JOIN process p1 ON s1.id = p1.stud_id
+    JOIN hours h1 ON p1.hours_id = h1.id
+    WHERE s1.last_name = N'Зингель'
+    UNION
+    --Зайцева
+    SELECT h2.course
+    FROM stud s2
+    JOIN process p2 ON s2.id = p2.stud_id
+    JOIN hours h2 ON p2.hours_id = h2.id
+    WHERE s2.last_name = N'Зайцева'
+)
+AND s3.last_name NOT IN (N'Зингель', N'Зайцева');
+
+--7
+SELECT s.*
+FROM stud s
+JOIN process p ON s.id = p.stud_id
+JOIN hours h ON p.hours_id = h.id
+WHERE EXISTS (
+    SELECT 1
+    FROM stud s2
+    JOIN process p2 ON s2.id = p2.stud_id
+    JOIN hours h2 ON p2.hours_id = h2.id
+    WHERE (s2.s_name IS NULL OR s2.s_name = N'') 
+    AND h2.faculty_id = h.faculty_id
+    AND h2.course = h.course
+    AND h2.form_id = h.form_id
+)
+AND (s.s_name IS NOT NULL AND s.s_name <> N'');
+
+--8
+SELECT 
+    s.*,
+    COUNT(*) OVER (PARTITION BY h.faculty_id, h.course) AS ОбщееЧислоСтудентов
+FROM stud s
+JOIN process p ON s.id = p.stud_id
+JOIN hours h ON p.hours_id = h.id
+WHERE (s.s_name IS NULL OR s.s_name = N'')
+AND s.last_name IS NOT NULL
