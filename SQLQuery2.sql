@@ -98,7 +98,8 @@ INSERT INTO [hours] (course, faculty_id, form_id, all_h, inclass_h) VALUES
 (1, 1, 1, 210, 50), 
 (2, 1, 2, 120, 60),
 (3, 2, 2, 110, 55), 
-(1, 2, 1, 90, 45); 
+(1, 2, 1, 90, 45),
+(1, 1, 1, 100, 50);
 
 INSERT INTO process (stud_id, hours_id) VALUES
 (1, 2),
@@ -115,28 +116,25 @@ INSERT INTO teach (last_name, f_name, s_name, dr_date, start_work_date) VALUES
 (N'Смирнов', N'Иван', N'Андреевич', '1980-05-15', '2005-09-01'),
 (N'Крылов', N'Олег', N'Петрович', '1975-08-20', '2000-09-01'),
 (N'Бортников', N'Дмитрий', N'Сергеевич', '1988-11-10', '2010-09-01'),
-(N'Енмильоо', N'Дмитрий', N'', '1981-11-10', '2010-09-06');
+(N'Енмильоо', N'Дмитрий', N'', '1981-11-10', '2010-09-06'),
+(N'Иванов', N'Алексей', N'Петрович', '1985-07-12', '2023-09-01');
 
 INSERT INTO subj (subj, hourss) VALUES
 (N'Математика', N'2 час(а)'),
 (N'Физика', N'3 час(а)'),
 (N'Информатика', N'2 час(а)'),
-(N'История', N'2 час(а)');
+(N'История', N'2 час(а)'),
+(N'Химия', N'2 час(а)');
 
 
 INSERT INTO work (teach_id, subj_id, hours_id) VALUES
 (1, 1, 1), 
-(1, 3, 3); 
-
-INSERT INTO work (teach_id, subj_id, hours_id) VALUES
-(2, 2, 2); 
-
-INSERT INTO work (teach_id, subj_id, hours_id) VALUES
+(1, 3, 3), 
+(2, 2, 2), 
 (3, 4, 4), 
-(3, 1, 1);
-
-INSERT INTO work (teach_id, subj_id, hours_id) VALUES
-(4, 2, 1);
+(3, 1, 1),
+(4, 2, 1),
+(5, 5, 5);
 
 --======================================================================
 --1.1
@@ -709,3 +707,374 @@ JOIN process p ON s.id = p.stud_id
 JOIN hours h ON p.hours_id = h.id
 WHERE (s.s_name IS NULL OR s.s_name = N'')
 AND s.last_name IS NOT NULL
+
+--------- 4 ----------
+--1
+CREATE PROCEDURE StudForm
+    @facultyName NVARCHAR(50),
+    @formName NVARCHAR(25)
+AS
+BEGIN
+    DECLARE @studentCount INT;
+
+    SELECT @studentCount = COUNT(*)
+    FROM stud s
+    INNER JOIN [hours] h ON s.exm = h.id 
+    INNER JOIN faculty f ON h.faculty_id = f.id
+    INNER JOIN form fr ON h.form_id = fr.id
+    WHERE f.faculty_name = @facultyName
+      AND fr.form_name = @formName;
+
+    PRINT 'Количество студентов на факультете "' + @facultyName + 
+          '" и форме обучения "' + @formName + '" равно: ' + CAST(@studentCount AS NVARCHAR(10));
+END;
+
+EXEC StudForm @facultyName = N'ФПМ', @formName = N'Очная';
+
+--2
+CREATE PROCEDURE Subj_inf
+AS
+BEGIN
+    DECLARE @TotalSubjects INT = 0;
+    DECLARE @TotalDuplicates INT = 0;
+
+    CREATE TABLE #FacCounts (
+        faculty_name NVARCHAR(50),
+        unique_subjects INT,
+        total_subjects INT,
+        duplicates INT
+    );
+
+    INSERT INTO #FacCounts (faculty_name, unique_subjects, total_subjects, duplicates)
+    SELECT
+        f.faculty_name,
+        COUNT(DISTINCT s.id) AS unique_subjects,
+        COUNT(w.subj_id) AS total_subjects,
+        SUM(CASE WHEN cnt > 1 THEN 1 ELSE 0 END) AS duplicates
+    FROM
+        faculty f
+        LEFT JOIN [hours] h ON f.id = h.faculty_id
+        LEFT JOIN work w ON h.id = w.hours_id
+        LEFT JOIN subj s ON w.subj_id = s.id
+        LEFT JOIN (
+            SELECT 
+                subj_id,
+                COUNT(*) AS cnt
+            FROM work
+            GROUP BY subj_id
+        ) AS subj_counts ON s.id = subj_counts.subj_id
+    GROUP BY
+        f.faculty_name;
+
+    SELECT
+        @TotalSubjects = SUM(unique_subjects),
+        @TotalDuplicates = SUM(duplicates)
+    FROM #FacCounts;
+
+    DECLARE @final_report NVARCHAR(MAX);
+
+    DECLARE @f NVARCHAR(50), @u INT, @t INT, @d INT;
+
+    DECLARE cur CURSOR FOR SELECT faculty_name, unique_subjects, total_subjects, duplicates FROM #FacCounts;
+
+    OPEN cur;
+    FETCH NEXT FROM cur INTO @f, @u, @t, @d;
+
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        PRINT 'Для ' + @f + ' читается ' + CAST(@u AS NVARCHAR(10)) + ' предметов, всего ' + CAST(@t AS NVARCHAR(10)) + ' предметов (' + CAST(@d AS NVARCHAR(10)) + ' из которых идентичны)';
+        FETCH NEXT FROM cur INTO @f, @u, @t, @d;
+    END
+
+    CLOSE cur;
+    DEALLOCATE cur;
+
+    PRINT 'Всего ' + CAST(@TotalSubjects AS NVARCHAR(10)) + ' предметов (' + CAST(@TotalDuplicates AS NVARCHAR(10)) + ' из которых идентичны)';
+    
+    DROP TABLE #FacCounts;
+END
+EXEC Subj_inf;
+
+--3
+CREATE PROCEDURE Add_stud
+    @faculty_name NVARCHAR(50),
+    @form_name NVARCHAR(25),
+    @last_name NVARCHAR(20),
+    @f_name NVARCHAR(20),
+    @s_name NVARCHAR(20),
+    @dr_date DATE,
+    @in_date DATE
+AS
+BEGIN
+    DECLARE @faculty_id INT;
+    DECLARE @form_id INT;
+    DECLARE @hours_id INT;
+
+    SELECT @faculty_id = id FROM faculty WHERE faculty_name = @faculty_name;
+    IF @faculty_id IS NULL
+    BEGIN
+        PRINT 'Ошибка: такого факультета не существует.';
+        RETURN;
+    END
+
+    SELECT @form_id = id FROM form WHERE form_name = @form_name;
+    IF @form_id IS NULL
+    BEGIN
+        PRINT 'Ошибка: такой формы обучения не существует.';
+        RETURN;
+    END
+
+    SELECT TOP 1 @hours_id = id FROM [hours]
+    WHERE course = 1; 
+
+    IF @hours_id IS NULL
+    BEGIN
+        PRINT 'Не найден час для первого курса. Проверьте таблицу hours.';
+        RETURN;
+    END
+
+    INSERT INTO stud (
+        last_name, f_name, s_name, dr_date, in_date, exm
+    )
+    VALUES (
+        @last_name, @f_name, @s_name, @dr_date, @in_date, 1 
+    );
+
+    DECLARE @stud_id INT = SCOPE_IDENTITY();
+
+    INSERT INTO process (stud_id, hours_id)
+    VALUES (@stud_id, @hours_id);
+
+    PRINT 'Студент успешно зачислен на первый курс.';
+END
+
+EXEC Add_stud
+    @faculty_name = 'ФПК',
+    @form_name = 'Очная',
+    @last_name = 'Рогал',
+    @f_name = 'Дорн',
+    @s_name = 'кмукп',
+    @dr_date = '2002-02-04',
+    @in_date = '2020-08-27';
+
+----------- 5 ----------------------
+--1
+CREATE FUNCTION dbo.Stud_info 
+( @s_name NVARCHAR(20) )
+RETURNS NVARCHAR(20)
+AS
+BEGIN
+    DECLARE @result NVARCHAR(20)
+
+    IF (@s_name IS NULL OR LTRIM(RTRIM(@s_name)) = '')
+        SET @result = N'иностранец'
+    ELSE
+        SET @result = N'гражданин'
+
+    RETURN @result
+END
+
+SELECT 
+    last_name,
+    f_name,
+    s_name,
+    dbo.Stud_info(s_name) AS ИнформацияОГражданстве
+FROM stud;
+
+--2
+CREATE FUNCTION dbo.PowerTeach
+( @teach_id INT )
+RETURNS INT
+AS
+BEGIN
+    DECLARE @total INT
+
+    SELECT @total = SUM(h.all_h)
+    FROM work w
+    JOIN [hours] h ON w.hours_id = h.id
+    WHERE w.teach_id = @teach_id
+
+    RETURN ISNULL(@total, 0)
+END
+
+SELECT 
+    t.id,
+    t.last_name,
+    t.f_name,
+    dbo.PowerTeach(t.id) AS total_hours
+FROM teach t;
+
+----------- 6 --------------
+--(1)
+CREATE VIEW FPKstud
+AS
+SELECT 
+    s.last_name,
+    s.f_name,
+    s.s_name,
+    h.course,
+    f.form_name
+FROM stud s
+JOIN process p ON s.id = p.stud_id
+JOIN [hours] h ON p.hours_id = h.id
+JOIN faculty fac ON h.faculty_id = fac.id
+JOIN form f ON h.form_id = f.id
+WHERE fac.faculty_name = N'ФПК';
+--2
+CREATE VIEW zaochn
+AS
+SELECT 
+    fac.faculty_name,
+    h.course,
+    SUM(h.all_h) AS sum_h_zaochn
+FROM [hours] h
+JOIN faculty fac ON h.faculty_id = fac.id
+JOIN form f ON h.form_id = f.id
+WHERE f.form_name = N'заочная'
+GROUP BY fac.faculty_name, h.course;
+--3
+CREATE VIEW otlichn
+AS
+SELECT 
+    fac.faculty_name,
+    h.course,
+    f.form_name,
+    COUNT(*) AS otlichn
+FROM stud s
+JOIN process p ON s.id = p.stud_id
+JOIN [hours] h ON p.hours_id = h.id
+JOIN faculty fac ON h.faculty_id = fac.id
+JOIN form f ON h.form_id = f.id
+WHERE s.exm > 8
+GROUP BY fac.faculty_name, h.course, f.form_name;
+--4
+CREATE VIEW slab
+AS
+SELECT 
+    s.last_name,
+    s.f_name,
+    s.s_name,
+    AVG(CAST(s.exm AS FLOAT)) AS ОценкиСлабоуспСтудентов
+FROM stud s
+WHERE s.exm < 6
+GROUP BY s.last_name, s.f_name, s.s_name;
+
+SELECT * FROM FPKstud
+SELECT * FROM zaochn
+SELECT * FROM otlichn
+SELECT * FROM slab
+
+--(2)
+--1= Только чтение \JOIN нескольких таблиц
+--2= Только чтение \SUM + GROUP BY
+--3= Только чтение \COUNT + GROUP BY
+--4= Только чтение \AVG + GROUP BY
+--все представлеиния только для чтения
+
+------------ 7 ----------------
+--1
+SELECT 
+    t.last_name,
+    t.f_name,
+    t.s_name,
+    SUM(h.all_h) AS total_hours,
+    CASE 
+        WHEN SUM(h.all_h) > 450 THEN '20%'
+        WHEN SUM(h.all_h) > 300 THEN '10%'
+        ELSE '0%'
+    END AS bonus
+FROM teach t
+JOIN work w ON t.id = w.teach_id
+JOIN [hours] h ON w.hours_id = h.id
+GROUP BY t.last_name, t.f_name, t.s_name;
+
+--2
+SELECT 
+    s.last_name AS Фамилия,
+    s.f_name AS Имя,
+    s.s_name AS Отчество,
+    CASE 
+        WHEN s.s_name IS NULL OR s.s_name = '' THEN N'Иностранное'
+        ELSE N'РБ'
+    END AS Гражданство
+FROM stud s
+
+UNION ALL
+
+SELECT 
+    t.last_name AS Фамилия,
+    t.f_name AS Имя,
+    t.s_name AS Отчество,
+    CASE 
+        WHEN t.s_name IS NULL OR t.s_name = '' THEN N'Иностранное'
+        ELSE N'РБ'
+    END AS Гражданство
+FROM teach t;
+
+--3
+SELECT 
+    t.last_name,
+    t.f_name,
+    t.s_name
+FROM teach t
+JOIN work w ON t.id = w.teach_id
+JOIN [hours] h ON w.hours_id = h.id
+JOIN faculty f ON h.faculty_id = f.id
+WHERE f.faculty_name IN (N'ФПК', N'ФПМ')
+GROUP BY t.last_name, t.f_name, t.s_name
+HAVING COUNT(DISTINCT f.faculty_name) = 2;
+
+--4
+SELECT DISTINCT 
+    t.last_name,
+    t.f_name,
+    t.s_name
+FROM teach t
+JOIN work w ON t.id = w.teach_id
+JOIN [hours] h ON w.hours_id = h.id
+JOIN faculty f ON h.faculty_id = f.id
+WHERE f.faculty_name = N'ФПК'
+AND NOT EXISTS (
+    SELECT 1
+    FROM work w2
+    JOIN [hours] h2 ON w2.hours_id = h2.id
+    JOIN faculty f2 ON h2.faculty_id = f2.id
+    WHERE w2.teach_id = t.id
+      AND f2.faculty_name = N'ФПМ'
+)
+UNION ALL
+SELECT N'none', N'none', N'none'
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM teach t
+    JOIN work w ON t.id = w.teach_id
+    JOIN [hours] h ON w.hours_id = h.id
+    JOIN faculty f ON h.faculty_id = f.id
+    WHERE f.faculty_name = N'ФПК'
+    AND NOT EXISTS (
+        SELECT 1
+        FROM work w2
+        JOIN [hours] h2 ON w2.hours_id = h2.id
+        JOIN faculty f2 ON h2.faculty_id = f2.id
+        WHERE w2.teach_id = t.id
+          AND f2.faculty_name = N'ФПМ'
+    )
+);
+
+--5
+SELECT N'Студентов' AS Тип, COUNT(*) AS Кол_во
+FROM stud
+
+UNION ALL
+
+SELECT N'Преподавателей', COUNT(*)
+FROM teach
+
+UNION ALL
+
+SELECT N'Всего человек', COUNT(*) 
+FROM (
+    SELECT id FROM stud
+    UNION ALL
+    SELECT id FROM teach
+) AS all_people;
