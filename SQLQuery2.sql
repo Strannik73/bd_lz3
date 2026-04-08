@@ -665,14 +665,14 @@ FROM stud s3
 JOIN process p3 ON s3.id = p3.stud_id
 JOIN hours h3 ON p3.hours_id = h3.id
 WHERE h3.course IN (
-    --Зингель
+
     SELECT h1.course
     FROM stud s1
     JOIN process p1 ON s1.id = p1.stud_id
     JOIN hours h1 ON p1.hours_id = h1.id
     WHERE s1.last_name = N'Зингель'
     UNION
-    --Зайцева
+
     SELECT h2.course
     FROM stud s2
     JOIN process p2 ON s2.id = p2.stud_id
@@ -813,14 +813,14 @@ BEGIN
     SELECT @faculty_id = id FROM faculty WHERE faculty_name = @faculty_name;
     IF @faculty_id IS NULL
     BEGIN
-        PRINT 'Ошибка: такого факультета не существует.';
+        PRINT 'факультета нет';
         RETURN;
     END
 
     SELECT @form_id = id FROM form WHERE form_name = @form_name;
     IF @form_id IS NULL
     BEGIN
-        PRINT 'Ошибка: такой формы обучения не существует.';
+        PRINT 'формы обучения нет';
         RETURN;
     END
 
@@ -851,9 +851,9 @@ END
 EXEC Add_stud
     @faculty_name = 'ФПК',
     @form_name = 'Очная',
-    @last_name = 'Рогал',
-    @f_name = 'Дорн',
-    @s_name = 'кмукп',
+    @last_name = 'Дорн',
+    @f_name = 'Рогал',
+    @s_name = '',
     @dr_date = '2002-02-04',
     @in_date = '2020-08-27';
 
@@ -901,7 +901,7 @@ SELECT
     t.id,
     t.last_name,
     t.f_name,
-    dbo.PowerTeach(t.id) AS total_hours
+    dbo.PowerTeach(t.id) AS ОбщиеЧасы
 FROM teach t;
 
 ----------- 6 --------------
@@ -965,11 +965,11 @@ SELECT * FROM otlichn
 SELECT * FROM slab
 
 --(2)
---1= Только чтение \JOIN нескольких таблиц
---2= Только чтение \SUM + GROUP BY
---3= Только чтение \COUNT + GROUP BY
---4= Только чтение \AVG + GROUP BY
---все представлеиния только для чтения
+--1= Модернизирующие \ (у меня) JOIN нескольких таблиц
+--2= Модернизирующие \ (у меня) SUM + GROUP BY
+--3= Только чтение \ (у меня) COUNT + GROUP BY
+--4= Модернизирующие \ (у меня) AVG + GROUP BY
+
 
 ------------ 7 ----------------
 --1
@@ -977,7 +977,7 @@ SELECT
     t.last_name,
     t.f_name,
     t.s_name,
-    SUM(h.all_h) AS total_hours,
+    SUM(h.all_h) AS ОбщиеЧасы,
     CASE 
         WHEN SUM(h.all_h) > 450 THEN '20%'
         WHEN SUM(h.all_h) > 300 THEN '10%'
@@ -1061,6 +1061,49 @@ WHERE NOT EXISTS (
     )
 );
 
+SELECT 
+    t.last_name AS teacher_last_name,
+    t.f_name AS teacher_first_name,
+    t.s_name AS teacher_middle_name,
+    fac.faculty_name AS faculty_name
+FROM teach t
+JOIN work w ON t.id = w.teach_id
+JOIN hours h ON w.hours_id = h.id
+JOIN faculty fac ON h.faculty_id = fac.id
+WHERE fac.faculty_name = N'ФПМ';
+
+SELECT 
+    t.last_name AS teacher_last_name,
+    t.f_name AS teacher_first_name,
+    t.s_name AS teacher_middle_name,
+    fac.faculty_name AS faculty_name
+FROM teach t
+JOIN work w ON t.id = w.teach_id
+JOIN hours h ON w.hours_id = h.id
+JOIN faculty fac ON h.faculty_id = fac.id
+WHERE fac.faculty_name = N'ФПК';
+
+
+SELECT 
+    t.last_name AS teacher_last_name,
+    t.f_name AS teacher_first_name,
+    t.s_name AS teacher_middle_name,
+    s.subj AS subject_name,
+    h.course AS course
+FROM teach t
+JOIN work w ON t.id = w.teach_id
+JOIN subj s ON w.subj_id = s.id
+JOIN hours h ON w.hours_id = h.id
+JOIN faculty fac ON h.faculty_id = fac.id
+WHERE fac.faculty_name = N'ФПК'  -- Преподаватели, работающие на ФПК
+AND NOT EXISTS (
+    SELECT 1
+    FROM hours h2
+    JOIN faculty fac2 ON h2.faculty_id = fac2.id
+    JOIN work w2 ON w2.hours_id = h2.id
+    WHERE fac2.faculty_name = N'ФПМ'  -- Исключаем преподавателей, работающих на ФПМ
+    AND w2.teach_id = t.id
+);
 --5
 SELECT N'Студентов' AS Тип, COUNT(*) AS Кол_во
 FROM stud
