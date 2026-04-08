@@ -123,18 +123,18 @@ INSERT INTO subj (subj, hourss) VALUES
 (N'Математика', N'2 час(а)'),
 (N'Физика', N'3 час(а)'),
 (N'Информатика', N'2 час(а)'),
-(N'История', N'2 час(а)'),
-(N'Химия', N'2 час(а)');
+(N'История', N'2 час(а)');
+
 
 
 INSERT INTO work (teach_id, subj_id, hours_id) VALUES
 (1, 1, 1), 
 (1, 3, 3), 
-(2, 2, 2), 
+(2, 2, 3), 
 (3, 4, 4), 
 (3, 1, 1),
-(4, 2, 1),
-(5, 5, 5);
+(4, 2, 1);
+
 
 --======================================================================
 --1.1
@@ -1042,68 +1042,8 @@ AND NOT EXISTS (
     WHERE w2.teach_id = t.id
       AND f2.faculty_name = N'ФПМ'
 )
-UNION ALL
-SELECT N'none', N'none', N'none'
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM teach t
-    JOIN work w ON t.id = w.teach_id
-    JOIN [hours] h ON w.hours_id = h.id
-    JOIN faculty f ON h.faculty_id = f.id
-    WHERE f.faculty_name = N'ФПК'
-    AND NOT EXISTS (
-        SELECT 1
-        FROM work w2
-        JOIN [hours] h2 ON w2.hours_id = h2.id
-        JOIN faculty f2 ON h2.faculty_id = f2.id
-        WHERE w2.teach_id = t.id
-          AND f2.faculty_name = N'ФПМ'
-    )
-);
-
-SELECT 
-    t.last_name AS teacher_last_name,
-    t.f_name AS teacher_first_name,
-    t.s_name AS teacher_middle_name,
-    fac.faculty_name AS faculty_name
-FROM teach t
-JOIN work w ON t.id = w.teach_id
-JOIN hours h ON w.hours_id = h.id
-JOIN faculty fac ON h.faculty_id = fac.id
-WHERE fac.faculty_name = N'ФПМ';
-
-SELECT 
-    t.last_name AS teacher_last_name,
-    t.f_name AS teacher_first_name,
-    t.s_name AS teacher_middle_name,
-    fac.faculty_name AS faculty_name
-FROM teach t
-JOIN work w ON t.id = w.teach_id
-JOIN hours h ON w.hours_id = h.id
-JOIN faculty fac ON h.faculty_id = fac.id
-WHERE fac.faculty_name = N'ФПК';
 
 
-SELECT 
-    t.last_name AS teacher_last_name,
-    t.f_name AS teacher_first_name,
-    t.s_name AS teacher_middle_name,
-    s.subj AS subject_name,
-    h.course AS course
-FROM teach t
-JOIN work w ON t.id = w.teach_id
-JOIN subj s ON w.subj_id = s.id
-JOIN hours h ON w.hours_id = h.id
-JOIN faculty fac ON h.faculty_id = fac.id
-WHERE fac.faculty_name = N'ФПК'  -- Преподаватели, работающие на ФПК
-AND NOT EXISTS (
-    SELECT 1
-    FROM hours h2
-    JOIN faculty fac2 ON h2.faculty_id = fac2.id
-    JOIN work w2 ON w2.hours_id = h2.id
-    WHERE fac2.faculty_name = N'ФПМ'  -- Исключаем преподавателей, работающих на ФПМ
-    AND w2.teach_id = t.id
-);
 --5
 SELECT N'Студентов' AS Тип, COUNT(*) AS Кол_во
 FROM stud
